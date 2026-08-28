@@ -323,6 +323,34 @@ const outstanding = [
   {label:'Schedule confirmed',           status:'done'},
 ];
 
+// ── PERSISTENT MEMORY ─────────────────────────────────────────────────────────
+const STORAGE_KEY='superfly-dashboard-state-v1';
+function parseMoney(value){
+  const text=String(value).replace(/,/g,'').trim();
+  const k=text.match(/([0-9]+(?:\.[0-9]+)?)\s*k/i);
+  if(k) return Math.round(parseFloat(k[1])*1000);
+  const n=parseInt(text.replace(/[^0-9]/g,''),10);
+  return Number.isFinite(n)?n:0;
+}
+function restoreState(){
+  try{
+    const saved=JSON.parse(localStorage.getItem(STORAGE_KEY)||'null');
+    if(!saved) return;
+    (saved.artistNames||[]).forEach((v,i)=>{if(artists[i]&&v) artists[i].name=v;});
+    (saved.artistFees||[]).forEach((v,i)=>{if(artists[i]&&Number.isFinite(v)) artists[i].fee=v;});
+    (saved.budgetAmounts||[]).forEach((v,i)=>{if(budget[i]&&Number.isFinite(v)) budget[i].amount=v;});
+  }catch(e){console.warn('Saved dashboard state could not be restored',e);}
+}
+function persistState(){
+  localStorage.setItem(STORAGE_KEY,JSON.stringify({
+    artistNames:artists.map(a=>a.name),
+    artistFees:artists.map(a=>a.fee),
+    budgetAmounts:budget.map(b=>b.amount),
+    savedAt:new Date().toISOString()
+  }));
+}
+restoreState();
+
 // ── RENDER ───────────────────────────────────────────────────────────────────
 function fmt(n){return n>=1000?"R"+(n/1000)+"k":"R"+n;}
 
@@ -332,10 +360,10 @@ function renderArtists(){
   tb.innerHTML = artists.map((a,i)=>`
     <tr>
       <td class="td-num">${String(i+1).padStart(2,'0')}</td>
-      <td class="td-name" data-editable>${a.name}</td>
+      <td class="td-name" data-editable data-field="artist-name" data-index="${i}">${a.name}</td>
       <td class="td-handle">${a.handle}</td>
       <td class="td-followers">${a.followers}</td>
-      <td class="td-fee confirmed" style="text-align:right;" data-editable>${fmt(a.fee)}</td>
+      <td class="td-fee confirmed" style="text-align:right;" data-editable data-field="artist-fee" data-index="${i}">${fmt(a.fee)}</td>
       <td class="td-status" style="text-align:right;font-size:11px;">
         <span class="status-dot dot-${a.status}"></span>${a.status}
       </td>
@@ -370,7 +398,7 @@ function renderBudget(){
         <div class="brow-label">${b.label}</div>
         ${b.note?`<div class="brow-note">${b.note}</div>`:''}
       </div>
-      <div class="brow-amount" data-editable>${fmt(b.amount)}</div>
+      <div class="brow-amount" data-editable data-field="budget-amount" data-index="${i}">${fmt(b.amount)}</div>
     </div>
   `).join('');
   document.getElementById('budgetTotalVal').textContent = fmt(total);
@@ -452,6 +480,18 @@ function initTilt(){
 renderArtists();
 renderBudget();
 renderOutstanding();
+
+document.querySelectorAll('[data-editable][data-field]').forEach(el=>{
+  el.addEventListener('input',()=>{
+    const index=parseInt(el.dataset.index,10);
+    const field=el.dataset.field;
+    if(field==='artist-name') artists[index].name=el.textContent.trim();
+    if(field==='artist-fee') artists[index].fee=parseMoney(el.textContent);
+    if(field==='budget-amount') budget[index].amount=parseMoney(el.textContent);
+    persistState();
+  });
+});
+
 initTilt();
 document.getElementById('footerDate').textContent=new Date().toLocaleString('en-ZA',{month:'long',year:'numeric'});
 </script>
